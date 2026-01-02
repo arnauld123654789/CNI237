@@ -1,8 +1,6 @@
 import { supabase } from './supabase';
 
 // Table name for people looking for their ID cards
-const TABLE = 'citizen_seekers';
-
 export async function listSeekers() {
   const { data, error } = await supabase
     .from(TABLE)

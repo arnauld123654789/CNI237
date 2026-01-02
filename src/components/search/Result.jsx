@@ -4,7 +4,8 @@ import { Button } from '../ui/Button';
 import { MapPin, CheckCircle, Clock } from 'lucide-react';
 
 export const Result = ({ candidate, onReset }) => {
-    const isReady = candidate.status === 'READY' || candidate.status === 'ISSUED';
+    const status = (candidate.status || '').toUpperCase();
+    const isReady = status === 'DISPONIBLE' || status === 'READY' || status === 'ISSUED';
 
     return (
         <Card className="animate-in fade-in zoom-in-95 duration-500 border-t-4 border-t-brand-500">
