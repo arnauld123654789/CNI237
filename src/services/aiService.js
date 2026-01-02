@@ -55,7 +55,7 @@ CRITICAL EXTRACTION RULES
    - Preserve accents (é, è, ô, à) when visible.
    - DO NOT merge first and last names.
    - DO NOT abbreviate.
-   - DO NOT invent missing parts.
+   - DO NOT invent missing parts but your top priority is to extract the names as they are written on the card all the names do not ignore any.
 
 2. Parent names:
    - Father's name usually appears as "Nom du père".
@@ -76,7 +76,7 @@ CRITICAL EXTRACTION RULES
 5. OCR correction rules:
    - Fix obvious OCR mistakes (0 ↔ O, 1 ↔ I, 5 ↔ S).
    - Do NOT guess unclear letters.
-   - Prefer BACK image if text is clearer there.
+   
 
 6. Multi-image logic:
    - Cross-check FRONT and BACK images.
