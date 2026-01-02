@@ -22,7 +22,7 @@ export const Result = ({ candidate, onReset }) => {
                 </div>
 
                 <div className="space-y-2">
-                    <h2 className="text-2xl font-bold text-gray-900">
+                    <h2 className="text-4xl md:text-5xl font-bold text-gray-900">
                         {isReady ? 'Carte disponible !' : 'En cours de production'}
                     </h2>
                     <p className="text-gray-600">
@@ -37,8 +37,8 @@ export const Result = ({ candidate, onReset }) => {
                         <div className="flex items-start gap-3">
                             <MapPin className="w-5 h-5 text-green-700 mt-1 shrink-0" />
                             <div>
-                                <p className="text-sm font-medium text-green-900">Lieu de retrait</p>
-                                <p className="text-lg font-bold text-green-800">{candidate.current_location}</p>
+                                <p className="text-lg md:text-xl font-medium text-green-900">Lieu de retrait</p>
+                                <p className="text-2xl md:text-3xl font-bold text-green-800">{candidate.current_location}</p>
                             </div>
                         </div>
                         <div className="text-xs text-green-700 pt-2 border-t border-green-200">

@@ -5,6 +5,7 @@ import { SearchForm } from './components/search/SearchForm';
 import { Verification } from './components/search/Verification';
 import { Result } from './components/search/Result';
 import { Container } from './components/ui/Container';
+import { Modal } from './components/ui/Modal';
 import { cniService } from './services/cniService';
 import { Toaster, toast } from 'react-hot-toast';
 import { DreamIntro } from './components/splash/DreamIntro';
@@ -17,6 +18,8 @@ function App() {
   const [step, setStep] = useState('HERO'); // HERO, SEARCH, VERIFICATION, RESULT
   const [candidates, setCandidates] = useState([]);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalContent, setModalContent] = useState({ title: '', description: '', actions: [] });
 
   const searchSectionRef = useRef(null);
 
@@ -32,23 +35,37 @@ function App() {
     try {
       const results = await cniService.search(formData);
       if (results.length === 0) {
-        // Show not found message directly or handled in UI?
-        // Requirement: "Carte non encore émise" -> Case 2
-        // But if not in DB at all? Maybe same message.
-        alert("Aucun dossier trouvé pour ces informations. Vérifiez l'orthographe ou essayez avec d'autres détails.");
+        setModalContent({
+          title: 'Aucun dossier correspondant',
+          description: "Nous n'avons trouvé aucun enregistrement pour ces informations. Vérifiez l'orthographe (nom/prénom) et essayez d'ajouter le numéro de téléphone.",
+          actions: [
+            { label: 'Fermer', onClick: () => setModalOpen(false) }
+          ]
+        });
+        setModalOpen(true);
       } else if (results.length === 1) {
         setSelectedCandidate(results[0]);
         setStep('VERIFICATION');
       } else {
-        // Multiple matches
-        // Requirement: "Le site doit être intelligent... Il peut demander des informations supplémentaires"
-        // For prototype, we'll just pick the first one or ask user to refine.
-        // Let's show a list if multiple? Or simplest: Ask to refine.
-        alert("Plusieurs dossiers trouvés. Veuillez ajouter votre prénom ou numéro de téléphone pour préciser la recherche.");
+        setModalContent({
+          title: 'Plusieurs dossiers trouvés',
+          description: "Veuillez ajouter votre prénom ou votre numéro de téléphone pour affiner la recherche et réduire les résultats.",
+          actions: [
+            { label: 'OK', onClick: () => setModalOpen(false) }
+          ]
+        });
+        setModalOpen(true);
       }
     } catch (error) {
       console.error(error);
-      alert("Une erreur est survenue lors de la recherche.");
+      setModalContent({
+        title: 'Erreur de recherche',
+        description: "Une erreur est survenue lors de la recherche. Veuillez réessayer plus tard.",
+        actions: [
+          { label: 'Fermer', onClick: () => setModalOpen(false) }
+        ]
+      });
+      setModalOpen(true);
     }
   };
 
@@ -93,6 +110,14 @@ function App() {
                         <Verification
                           candidate={selectedCandidate}
                           onVerify={handleVerify}
+                          onFail={(message) => {
+                            setModalContent({
+                              title: 'Vérification échouée',
+                              description: message || "Les informations ne correspondent pas. Veuillez vérifier et réessayer.",
+                              actions: [{ label: 'Réessayer', onClick: () => setModalOpen(false) }]
+                            });
+                            setModalOpen(true);
+                          }}
                         />
                         <button
                           onClick={() => setStep('SEARCH')}
@@ -118,6 +143,14 @@ function App() {
           </Layout>
         )}
       </AnimatePresence>
+      <Modal
+        isOpen={modalOpen}
+        title={modalContent.title}
+        description={modalContent.description}
+        actions={modalContent.actions}
+        onClose={() => setModalOpen(false)}
+      />
+      <Toaster />
     </>
   );
 }

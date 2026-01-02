@@ -27,7 +27,12 @@ export const SearchForm = ({ onSearch, documentType = 'CNI', className }) => {
         setIsLoading(true);
         // Simulate generic delay for nicer UX
         await new Promise(resolve => setTimeout(resolve, 800));
-        await onSearch(formData);
+        const sanitized = {
+            firstName: (formData.firstName || '').trim(),
+            lastName: (formData.lastName || '').trim(),
+            phone: (formData.phone || '').trim()
+        };
+        await onSearch(sanitized);
         setIsLoading(false);
     };
 
@@ -80,7 +85,7 @@ export const SearchForm = ({ onSearch, documentType = 'CNI', className }) => {
                         className="w-full mt-4 bg-brand-600 hover:bg-brand-700"
                         isLoading={isLoading}
                     >
-                        Rechercher mon {documentType === 'CNI' ? 'carte' : 'document'}
+                        Rechercher  {documentType === 'CNI' ? 'carte' : 'document'}
                     </Button>
                 </form>
             </CardContent>

@@ -18,16 +18,19 @@ export const cniService = {
      */
     async search(searchParams) {
         const { firstName, lastName, phone } = searchParams;
+        const firstTrim = (firstName || '').trim();
+        const lastTrim = (lastName || '').trim();
+        const phoneTrim = (phone || '').trim();
 
         let query = supabase
             .from('cni_data')
-            .select('id, first_name, last_name, father_name, mother_name, status, birth_date, issue_place, current_location');
+            .select('id, first_name, last_name, father_name, mother_name, status, birth_date, issue_place, current_location, phone');
 
-        // Simple ILIKE search (case insensitive)
-        // Note: In a real production app with millions of rows, we'd use Full Text Search in Postgres.
-        if (firstName) query = query.ilike('first_name', `%${firstName}%`);
-        if (lastName) query = query.ilike('last_name', `%${lastName}%`);
-        if (phone) query = query.ilike('phone', `%${phone}%`);
+        // Base ILIKE search (case-insensitive). We’ll also do client-side normalization
+        // to be accent-insensitive and truly case-insensitive.
+        if (firstTrim) query = query.ilike('first_name', `%${firstTrim}%`);
+        if (lastTrim) query = query.ilike('last_name', `%${lastTrim}%`);
+        if (phoneTrim) query = query.ilike('phone', `%${phoneTrim}%`);
 
         const { data, error } = await query;
 
@@ -36,7 +39,25 @@ export const cniService = {
             throw error;
         }
 
-        return data || [];
+        const results = (data || []);
+
+        // Client-side normalization filter to handle accents and ensure case-insensitive matching
+        const nf = normalize(firstTrim || '');
+        const nl = normalize(lastTrim || '');
+        const np = normalize(phoneTrim || '');
+
+        const filtered = results.filter((item) => {
+            const ifn = normalize(item.first_name || '');
+            const iln = normalize(item.last_name || '');
+            const iph = normalize(item.phone || '');
+
+            const matchFirst = nf ? ifn.includes(nf) : true;
+            const matchLast = nl ? iln.includes(nl) : true;
+            const matchPhone = np ? iph.includes(np) : true;
+            return matchFirst && matchLast && matchPhone;
+        });
+
+        return filtered;
     },
 
     /**
