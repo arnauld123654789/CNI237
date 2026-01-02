@@ -5,6 +5,8 @@ import { Button } from '../../components/ui/Button';
 import { listCniData, addCniRecord, updateCniRecord, removeCniRecord } from '../../services/cniAdminService.js';
 import { Modal } from '../../components/ui/Modal';
 import { pickupPointsService } from '../../services/pickupPointsService';
+import { aiService } from '../../services/aiService.js';
+import { Sparkles, Upload, Scan, Loader2 } from 'lucide-react';
 
 export const Users = () => {
   const [records, setRecords] = useState([]);
@@ -19,6 +21,76 @@ export const Users = () => {
   // Search and filters
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState({ name: '', phone: '', location: '', status: '' });
+
+  // AI State
+  const [useAI, setUseAI] = useState(false);
+  const [frontImage, setFrontImage] = useState(null);
+  const [backImage, setBackImage] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [agentMessage, setAgentMessage] = useState('');
+
+  const handleImageChange = (e, setImg) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImg(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (!frontImage || !backImage) {
+      setError("Veuillez charger les photos du RECTO et du VERSO de la CNI.");
+      return;
+    }
+    setAnalyzing(true);
+    setError('');
+
+    // Sequence of messages to simulate agent "thought"
+    const steps = [
+      "Initialisation de l'agent visuel...",
+      "Numérisation du RECTO de la CNI...",
+      "Numérisation du VERSO de la CNI...",
+      "Extraction des textes et validation...",
+      "Structuration des données..."
+    ];
+
+    let stepIndex = 0;
+    setAgentMessage(steps[0]);
+
+    const interval = setInterval(() => {
+      stepIndex++;
+      if (stepIndex < steps.length) {
+        setAgentMessage(steps[stepIndex]);
+      }
+    }, 1500);
+
+    try {
+      const fBase64 = frontImage.split(',')[1];
+      const bBase64 = backImage.split(',')[1];
+
+      const data = await aiService.extractCniData(fBase64, bBase64);
+
+      setForm(prev => ({
+        ...prev,
+        ...data,
+        status: 'en cours de traitement'
+      }));
+
+      // Success! Turn off AI mode to show the filled form
+      setUseAI(false);
+      setFrontImage(null);
+      setBackImage(null);
+    } catch (err) {
+      console.error(err);
+      setError("Échec de l'analyse IA. Veuillez vérifier les images ou remplir manuellement.");
+    } finally {
+      clearInterval(interval);
+      setAnalyzing(false);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -132,48 +204,156 @@ export const Users = () => {
           <p className="text-sm text-slate-600">Gérez les données des citoyens et associez un point de retrait existant.</p>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input id="first_name" label="Prénom" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} required />
-            <Input id="last_name" label="Nom" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} required />
-            <Input id="father_name" label="Nom du père" value={form.father_name} onChange={(e) => setForm({ ...form, father_name: e.target.value })} />
-            <Input id="mother_name" label="Nom de la mère" value={form.mother_name} onChange={(e) => setForm({ ...form, mother_name: e.target.value })} />
-            <Input id="birth_date" label="Date de naissance" type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
-            <Input id="issue_place" label="Lieu d'émission" value={form.issue_place} onChange={(e) => setForm({ ...form, issue_place: e.target.value })} />
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">Point de retrait</label>
-              <select
-                className="w-full border border-slate-300 rounded px-3 py-2"
-                value={form.pickup_point_id ?? ''}
-                onChange={(e) => {
-                  const id = e.target.value ? Number(e.target.value) : null;
-                  const selected = locations.find((p) => p.id === id) || null;
-                  setForm({
-                    ...form,
-                    pickup_point_id: id,
-                    current_location: selected ? selected.name : ''
-                  });
-                }}
-              >
-                <option value="">Sélectionner…</option>
-                {locations.map((p) => (<option key={p.id} value={p.id}>{p.name} — {p.address}</option>))}
-              </select>
+          <div className="mb-6 flex items-center justify-between bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-indigo-600" />
+              <div>
+                <p className="text-sm font-medium text-slate-900">Remplissage Automatique IA</p>
+                <p className="text-xs text-slate-500">Scanner une CNI pour remplir le formulaire</p>
+              </div>
             </div>
-            <Input id="phone" label="Téléphone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">Statut</label>
-              <select
-                className="w-full border border-slate-300 rounded px-3 py-2"
-                value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value })}
-              >
-                <option value="en cours de traitement">En cours de traitement</option>
-                <option value="Disponible">Disponible</option>
-              </select>
+            <button
+              type="button"
+              onClick={() => setUseAI(!useAI)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useAI ? 'bg-indigo-600' : 'bg-slate-300'}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useAI ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+
+          {useAI ? (
+            <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
+              {analyzing ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-indigo-100 rounded-full animate-ping opacity-75"></div>
+                    <div className="relative bg-white p-4 rounded-full shadow-lg border border-indigo-100">
+                      <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">Analyse en cours...</h3>
+                    <p className="text-slate-500 font-mono text-sm mt-1">{agentMessage}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Front Image Upload */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700">Recto de la CNI</label>
+                    <div className="relative group">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleImageChange(e, setFrontImage)}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      />
+                      <div className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center transition-colors ${frontImage ? 'border-indigo-300 bg-indigo-50' : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'}`}>
+                        {frontImage ? (
+                          <>
+                            <img src={frontImage} alt="Recto Preview" className="h-32 object-contain mb-2 rounded shadow-sm" />
+                            <p className="text-xs text-indigo-600 font-medium">Image chargée</p>
+                          </>
+                        ) : (
+                          <>
+                            <div className="p-3 bg-white rounded-full shadow-sm mb-3">
+                              <Upload className="w-5 h-5 text-slate-400" />
+                            </div>
+                            <p className="text-sm text-slate-600 font-medium">Cliquez pour charger ou photo</p>
+                            <p className="text-xs text-slate-400 mt-1">Recto de la carte</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Back Image Upload */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-700">Verso de la CNI</label>
+                    <div className="relative group">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleImageChange(e, setBackImage)}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      />
+                      <div className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center transition-colors ${backImage ? 'border-indigo-300 bg-indigo-50' : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'}`}>
+                        {backImage ? (
+                          <>
+                            <img src={backImage} alt="Verso Preview" className="h-32 object-contain mb-2 rounded shadow-sm" />
+                            <p className="text-xs text-indigo-600 font-medium">Image chargée</p>
+                          </>
+                        ) : (
+                          <>
+                            <div className="p-3 bg-white rounded-full shadow-sm mb-3">
+                              <Upload className="w-5 h-5 text-slate-400" />
+                            </div>
+                            <p className="text-sm text-slate-600 font-medium">Cliquez pour charger ou photo</p>
+                            <p className="text-xs text-slate-400 mt-1">Verso de la carte</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <Button
+                      type="button"
+                      onClick={handleAnalyze}
+                      disabled={!frontImage || !backImage}
+                      className="w-full h-12 text-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 shadow-md flex items-center justify-center gap-2"
+                    >
+                      <Scan className="w-5 h-5" />
+                      Lancer l&apos;analyse IA
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="md:col-span-2">
-              <Button type="submit" className="bg-brand-600 hover:bg-brand-700">Ajouter</Button>
-            </div>
-          </form>
+          ) : (
+            <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <Input id="first_name" label="Prénom" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} required />
+              <Input id="last_name" label="Nom" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} required />
+              <Input id="father_name" label="Nom du père" value={form.father_name} onChange={(e) => setForm({ ...form, father_name: e.target.value })} />
+              <Input id="mother_name" label="Nom de la mère" value={form.mother_name} onChange={(e) => setForm({ ...form, mother_name: e.target.value })} />
+              <Input id="birth_date" label="Date de naissance" type="date" value={form.birth_date} onChange={(e) => setForm({ ...form, birth_date: e.target.value })} />
+              <Input id="issue_place" label="Lieu d'émission" value={form.issue_place} onChange={(e) => setForm({ ...form, issue_place: e.target.value })} />
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">Point de retrait</label>
+                <select
+                  className="w-full border border-slate-300 rounded px-3 py-2"
+                  value={form.pickup_point_id ?? ''}
+                  onChange={(e) => {
+                    const id = e.target.value ? Number(e.target.value) : null;
+                    const selected = locations.find((p) => p.id === id) || null;
+                    setForm({
+                      ...form,
+                      pickup_point_id: id,
+                      current_location: selected ? selected.name : ''
+                    });
+                  }}
+                >
+                  <option value="">Sélectionner…</option>
+                  {locations.map((p) => (<option key={p.id} value={p.id}>{p.name} — {p.address}</option>))}
+                </select>
+              </div>
+              <Input id="phone" label="Téléphone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">Statut</label>
+                <select
+                  className="w-full border border-slate-300 rounded px-3 py-2"
+                  value={form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                >
+                  <option value="en cours de traitement">En cours de traitement</option>
+                  <option value="Disponible">Disponible</option>
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <Button type="submit" className="bg-brand-600 hover:bg-brand-700 w-full md:w-auto">Ajouter</Button>
+              </div>
+            </form>
+          )}
           {error && <p className="mt-3 text-sm text-red-600" role="alert">{error}</p>}
         </CardContent>
       </Card>
