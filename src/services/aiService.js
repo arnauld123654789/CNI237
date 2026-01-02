@@ -55,8 +55,8 @@ CRITICAL EXTRACTION RULES
    - Preserve accents (é, è, ô, à) when visible.
    - DO NOT merge first and last names.
    - DO NOT abbreviate.
-   - DO NOT invent missing parts but your top priority is to extract the names as they are written on the card all the names do not ignore any.
-
+   - DO NOT invent missing parts but your top priority is to extract the names as they are written on the card all the names do not ignore any note a person can have many names .
+   - make sur absolutely all his names are extracted exactly.
 2. Parent names:
    - Father's name usually appears as "Nom du père".
    - Mother's name usually appears as "Nom de la mère".
