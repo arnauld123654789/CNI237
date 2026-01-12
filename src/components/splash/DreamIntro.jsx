@@ -36,7 +36,7 @@ export const DreamIntro = ({ onComplete }) => {
                             initial={{ scale: 0.8, opacity: 0, y: 20 }}
                             animate={{ scale: 1, opacity: 1, y: 0 }}
                             exit={{ scale: 1.1, opacity: 0, y: -20 }}
-                            className="relative flex flex-col items-center"
+                            className="relative flex flex-col items-center w-full max-h-[85vh] aspect-[4/5] md:aspect-square"
                         >
                             <div className="bg-white rounded-[40px] shadow-2xl p-3 border-4 border-blue-100 relative w-full h-full flex flex-col items-center">
                                 <p className="text-xl md:text-2xl font-bold text-slate-800 mb-2 text-center flex-shrink-0">
@@ -45,12 +45,12 @@ export const DreamIntro = ({ onComplete }) => {
                                 {/* Increased relative size: flex-grow to take remaining space */}
                                 <div className="relative w-full flex-grow overflow-hidden rounded-2xl shadow-inner bg-slate-50 border-2 border-slate-100 min-h-[300px] md:min-h-[400px]">
                                     <motion.img
-                                        initial={{ scale: 1.2 }}
+                                        initial={{ scale: 1.1 }}
                                         animate={{ scale: 1 }}
                                         transition={{ duration: 6 }}
                                         src="/wanda.jpg"
                                         alt="Recherche"
-                                        className="w-full h-full object-cover"
+                                        className="w-full h-full object-contain"
                                     />
                                 </div>
                                 {/* Bubble tail -- adjusted to fit new padding */}
