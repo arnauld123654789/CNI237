@@ -33,28 +33,60 @@ function App() {
 
   const handleSearch = async (formData) => {
     try {
-      const results = await cniService.search(formData);
-      if (results.length === 0) {
+      const searchResponse = await cniService.search(formData);
+      // Destructure new response format, defaulting to empty for safety
+      const { matchType, candidates: results } = searchResponse || { matchType: 'NONE', candidates: [] };
+
+      if (matchType === 'NONE' || results.length === 0) {
         setModalContent({
           title: 'Aucun dossier correspondant',
-          description: "Nous n'avons trouvé aucun enregistrement pour ces informations. Vérifiez l'orthographe (nom/prénom) et essayez d'ajouter le numéro de téléphone.",
+          description: "Nous n'avons trouvé aucun enregistrement pour ces informations. Vérifiez l'orthographe.",
           actions: [
             { label: 'Fermer', onClick: () => setModalOpen(false) }
           ]
         });
         setModalOpen(true);
-      } else if (results.length === 1) {
-        setSelectedCandidate(results[0]);
-        setStep('VERIFICATION');
-      } else {
+      } else if (matchType === 'SIMILAR') {
+        // "Smart" suggestions
+        const suggestions = results.map(r => `• ${r.first_name} ${r.last_name} → ${r.current_location}`).join('\n');
         setModalContent({
-          title: 'Plusieurs dossiers trouvés',
-          description: "Veuillez ajouter votre prénom ou votre numéro de téléphone pour affiner la recherche et réduire les résultats.",
+          title: 'Nom introuvable, suggestions :',
+          description: (
+            <div className="space-y-4">
+              <p>Ce nom exact n'est pas dans la base. Voici des correspondances proches :</p>
+              <div className="bg-gray-50 p-4 rounded-md whitespace-pre-line font-medium text-slate-700">
+                {suggestions}
+              </div>
+              <p className="text-sm text-gray-500">Rendez-vous à l'emplacement indiqué pour vérifier.</p>
+            </div>
+          ),
           actions: [
-            { label: 'OK', onClick: () => setModalOpen(false) }
+            { label: 'Fermer', onClick: () => setModalOpen(false) }
           ]
         });
         setModalOpen(true);
+      } else {
+        // EXACT or PHONE_MISMATCH
+        if (matchType === 'PHONE_MISMATCH') {
+          toast('Numéro de téléphone incorrect, mais voici le document trouvé.', {
+            icon: '⚠️',
+            duration: 5000,
+          });
+        }
+
+        if (results.length === 1) {
+          setSelectedCandidate(results[0]);
+          setStep('VERIFICATION');
+        } else {
+          setModalContent({
+            title: 'Plusieurs dossiers trouvés',
+            description: "Plusieurs résultats correspondent. Veuillez affiner la recherche.",
+            actions: [
+              { label: 'OK', onClick: () => setModalOpen(false) }
+            ]
+          });
+          setModalOpen(true);
+        }
       }
     } catch (error) {
       console.error(error);
