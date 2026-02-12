@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardHeader, CardContent } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -7,6 +7,175 @@ import { Modal } from '../../components/ui/Modal';
 import { pickupPointsService } from '../../services/pickupPointsService';
 import { aiService } from '../../services/aiService.js';
 import { Sparkles, Upload, Scan, Loader2 } from 'lucide-react';
+import QRCode from 'qrcode';
+import { toPng } from 'html-to-image';
+
+const MAX_IMAGE_SIZE_BYTES = 1024 * 1024; // 1 MB
+const START_QUALITY = 0.95;
+const MIN_QUALITY = 0.82;
+const QUALITY_STEP = 0.05;
+const SCALE_STEP = 0.9;
+const MIN_SHORT_SIDE = 900;
+const MAX_COMPRESSION_PASSES = 12;
+
+const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onloadend = () => resolve(reader.result);
+  reader.onerror = () => reject(new Error('Failed to read image file.'));
+  reader.readAsDataURL(file);
+});
+
+const dataUrlSizeBytes = (dataUrl) => {
+  const base64 = (dataUrl || '').split(',')[1] || '';
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
+};
+
+const loadImageFromDataUrl = (dataUrl) => new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => resolve(img);
+  img.onerror = () => reject(new Error('Failed to decode image.'));
+  img.src = dataUrl;
+});
+
+const renderJpegDataUrl = (img, width, height, quality) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Canvas context is not available.');
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, width, height);
+
+  return canvas.toDataURL('image/jpeg', quality);
+};
+
+const compressImageIfNeeded = async (file) => {
+  const originalDataUrl = await readFileAsDataUrl(file);
+
+  // Only compress when the uploaded file itself is above 1MB.
+  if (file.size <= MAX_IMAGE_SIZE_BYTES) {
+    return originalDataUrl;
+  }
+
+  const img = await loadImageFromDataUrl(originalDataUrl);
+  const originalWidth = img.naturalWidth || img.width;
+  const originalHeight = img.naturalHeight || img.height;
+
+  if (!originalWidth || !originalHeight) {
+    return originalDataUrl;
+  }
+
+  let bestDataUrl = originalDataUrl;
+  let quality = START_QUALITY;
+  let scale = 1;
+  let pass = 0;
+
+  while (pass < MAX_COMPRESSION_PASSES) {
+    const width = Math.max(1, Math.round(originalWidth * scale));
+    const height = Math.max(1, Math.round(originalHeight * scale));
+    const candidate = renderJpegDataUrl(img, width, height, quality);
+    const candidateSize = dataUrlSizeBytes(candidate);
+
+    bestDataUrl = candidate;
+    if (candidateSize <= MAX_IMAGE_SIZE_BYTES) {
+      return candidate;
+    }
+
+    if (quality > MIN_QUALITY) {
+      quality = Math.max(MIN_QUALITY, quality - QUALITY_STEP);
+    } else {
+      const shortestSide = Math.min(width, height);
+      if (shortestSide <= MIN_SHORT_SIDE) {
+        return bestDataUrl;
+      }
+      scale *= SCALE_STEP;
+    }
+
+    pass += 1;
+  }
+
+  return bestDataUrl;
+};
+
+const formatDateDisplay = (isoDate) => {
+  if (!isoDate) return 'N/A';
+  const parsed = new Date(isoDate);
+  if (Number.isNaN(parsed.getTime())) return isoDate;
+  return parsed.toLocaleDateString('fr-FR');
+};
+
+const toCardField = (value, fallback = 'N/A') => {
+  const text = (value || '').toString().trim();
+  return text || fallback;
+};
+
+const buildDigitalCardData = (formData) => {
+  const firstName = toCardField(formData.first_name, '');
+  const lastName = toCardField(formData.last_name, '');
+  const fullName = `${firstName} ${lastName}`.trim() || 'IDENTITE NON RENSEIGNEE';
+
+  const seed = `${firstName}|${lastName}|${formData.birth_date || ''}|${formData.issue_place || ''}`.toUpperCase();
+  let checksum = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    checksum = (checksum * 31 + seed.charCodeAt(i)) % 100000000;
+  }
+  const ref = `CMR-${String(checksum).padStart(8, '0')}`;
+
+  return {
+    fullName: fullName.toUpperCase(),
+    firstName: toCardField(formData.first_name),
+    lastName: toCardField(formData.last_name),
+    fatherName: toCardField(formData.father_name),
+    motherName: toCardField(formData.mother_name),
+    birthDate: formatDateDisplay(formData.birth_date),
+    issuePlace: toCardField(formData.issue_place),
+    phone: toCardField(formData.phone, '--'),
+    status: toCardField(formData.status, 'en cours de traitement'),
+    generatedOn: new Date().toLocaleDateString('fr-FR'),
+    ref
+  };
+};
+
+const DIGITAL_CARD_ANIMATION_CSS = `
+@keyframes cardSignalScan {
+  0% { transform: translateX(-35%) skewX(-18deg); opacity: 0; }
+  15% { opacity: .45; }
+  55% { opacity: .2; }
+  100% { transform: translateX(135%) skewX(-18deg); opacity: 0; }
+}
+
+@keyframes cardSignalGrid {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 0 64px, 64px 0; }
+}
+
+@keyframes cardSignalPulse {
+  0%, 100% { opacity: .18; transform: scale(1); }
+  50% { opacity: .42; transform: scale(1.06); }
+}
+
+.digital-card-grid-signal {
+  background-image:
+    linear-gradient(to bottom, rgba(148,163,184,.16) 1px, transparent 1px),
+    linear-gradient(to right, rgba(56,189,248,.12) 1px, transparent 1px);
+  background-size: 24px 24px, 24px 24px;
+  animation: cardSignalGrid 6s linear infinite;
+}
+
+.digital-card-scan-signal {
+  animation: cardSignalScan 3.8s ease-in-out infinite;
+}
+
+.digital-card-pulse-orb {
+  animation: cardSignalPulse 2.6s ease-in-out infinite;
+}
+`;
 
 export const Users = () => {
   const [records, setRecords] = useState([]);
@@ -28,15 +197,105 @@ export const Users = () => {
   const [backImage, setBackImage] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [agentMessage, setAgentMessage] = useState('');
+  const [isCardPreviewOpen, setIsCardPreviewOpen] = useState(false);
+  const [cardQrCode, setCardQrCode] = useState('');
+  const [isDownloadingCardImage, setIsDownloadingCardImage] = useState(false);
+  const cardPreviewRef = useRef(null);
 
-  const handleImageChange = (e, setImg) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImg(reader.result);
-      };
-      reader.readAsDataURL(file);
+  const cardData = useMemo(() => buildDigitalCardData(form), [form]);
+  const canPreviewDigitalCard = Boolean((form.first_name || '').trim() && (form.last_name || '').trim());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const buildQrCode = async () => {
+      if (!isCardPreviewOpen) return;
+      try {
+        const payload = JSON.stringify({
+          ref: cardData.ref,
+          full_name: cardData.fullName,
+          birth_date: cardData.birthDate,
+          issue_place: cardData.issuePlace,
+          generated_on: cardData.generatedOn
+        });
+        const qrDataUrl = await QRCode.toDataURL(payload, {
+          width: 104,
+          margin: 1,
+          errorCorrectionLevel: 'M',
+          color: {
+            dark: '#0f172a',
+            light: '#0000'
+          }
+        });
+        if (!cancelled) {
+          setCardQrCode(qrDataUrl);
+        }
+      } catch (err) {
+        console.error('QR generation error:', err);
+        if (!cancelled) {
+          setCardQrCode('');
+        }
+      }
+    };
+
+    buildQrCode();
+    return () => {
+      cancelled = true;
+    };
+  }, [isCardPreviewOpen, cardData]);
+
+  const handleOpenCardPreview = () => {
+    if (!canPreviewDigitalCard) {
+      setError('Veuillez renseigner au moins le prenom et le nom avant la previsualisation.');
+      return;
+    }
+    setError('');
+    setIsCardPreviewOpen(true);
+  };
+
+  const handleDownloadCardImage = async () => {
+    if (isDownloadingCardImage) return;
+    if (!cardPreviewRef.current) {
+      setError("Impossible de generer l'image de la carte.");
+      return;
+    }
+
+    setIsDownloadingCardImage(true);
+    setError('');
+
+    try {
+      const dataUrl = await toPng(cardPreviewRef.current, {
+        cacheBust: true,
+        pixelRatio: 2.2,
+        backgroundColor: '#020617'
+      });
+
+      const first = (form.first_name || '').trim().replace(/\s+/g, '_').toLowerCase() || 'prenom';
+      const last = (form.last_name || '').trim().replace(/\s+/g, '_').toLowerCase() || 'nom';
+      const anchor = document.createElement('a');
+      anchor.href = dataUrl;
+      anchor.download = `carte_numerique_${first}_${last}_${cardData.ref}.png`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    } catch (err) {
+      console.error('Card image export error:', err);
+      setError("Echec de generation de l'image. Reessayez.");
+    } finally {
+      setIsDownloadingCardImage(false);
+    }
+  };
+
+  const handleImageChange = async (e, setImg) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const processedDataUrl = await compressImageIfNeeded(file);
+      setImg(processedDataUrl);
+    } catch (err) {
+      console.error('Image preprocessing error:', err);
+      setError("Impossible de traiter l'image. Veuillez reessayer.");
     }
   };
 
@@ -198,6 +457,7 @@ export const Users = () => {
 
   return (
     <div className="space-y-8">
+      <style>{DIGITAL_CARD_ANIMATION_CSS}</style>
       <Card>
         <CardHeader>
           <h2 className="text-xl md:text-2xl font-bold">Enregistrements CNI (cni_data)</h2>
@@ -349,7 +609,16 @@ export const Users = () => {
                   <option value="Disponible">Disponible</option>
                 </select>
               </div>
-              <div className="md:col-span-2">
+              <div className="md:col-span-2 flex flex-col md:flex-row gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleOpenCardPreview}
+                  disabled={!canPreviewDigitalCard}
+                  className="w-full md:w-auto"
+                >
+                  Previsualiser la carte numerique
+                </Button>
                 <Button type="submit" className="bg-brand-600 hover:bg-brand-700 w-full md:w-auto">Ajouter</Button>
               </div>
             </form>
@@ -451,6 +720,107 @@ export const Users = () => {
           )}
         </CardContent>
       </Card>
+
+      <Modal
+        isOpen={isCardPreviewOpen}
+        title="Previsualisation - Carte numerique"
+        description={(
+          <div className="space-y-4">
+            <div
+              ref={cardPreviewRef}
+              className="relative overflow-hidden rounded-2xl p-5 text-white border border-slate-500/50 bg-[radial-gradient(circle_at_18%_22%,rgba(34,197,94,.3),transparent_34%),radial-gradient(circle_at_84%_18%,rgba(59,130,246,.35),transparent_38%),linear-gradient(135deg,#020617_0%,#0f172a_48%,#111827_100%)] shadow-2xl"
+            >
+              <div className="absolute inset-0 pointer-events-none digital-card-grid-signal opacity-40" />
+              <div className="absolute inset-y-0 left-[-35%] w-[26%] pointer-events-none bg-gradient-to-r from-transparent via-cyan-300/35 to-transparent blur-sm digital-card-scan-signal" />
+              <div className="absolute top-[28%] left-[22%] h-2 w-2 rounded-full bg-cyan-300/60 blur-[1px] digital-card-pulse-orb" />
+              <div className="absolute top-[70%] left-[62%] h-1.5 w-1.5 rounded-full bg-emerald-300/60 blur-[1px] digital-card-pulse-orb" style={{ animationDelay: '0.7s' }} />
+              <div className="absolute top-[42%] left-[82%] h-1.5 w-1.5 rounded-full bg-sky-300/70 blur-[1px] digital-card-pulse-orb" style={{ animationDelay: '1.2s' }} />
+              <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-cyan-300/20 blur-2xl" />
+              <div className="absolute -bottom-8 -left-8 h-28 w-28 rounded-full bg-emerald-300/20 blur-2xl" />
+
+              <div className="relative flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-12 rounded-md border border-amber-900/40 bg-gradient-to-br from-amber-300 via-amber-200 to-yellow-100 shadow-inner" />
+                  <div>
+                    <p className="text-[10px] tracking-[0.22em] uppercase text-sky-200">Carte numerique de consultation</p>
+                    <h4 className="text-lg sm:text-xl font-bold tracking-wide mt-1">{cardData.fullName}</h4>
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-slate-300">Republique du Cameroun</p>
+                  </div>
+                </div>
+                <p className="text-[10px] uppercase tracking-[0.1em] text-slate-300">Ref: {cardData.ref}</p>
+              </div>
+
+              <div className="relative mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div className="rounded-lg border border-slate-500/40 bg-slate-900/45 p-2.5">
+                  <p className="text-[10px] tracking-[0.14em] uppercase text-sky-200">Prenom</p>
+                  <p className="mt-1 font-semibold">{cardData.firstName}</p>
+                </div>
+                <div className="rounded-lg border border-slate-500/40 bg-slate-900/45 p-2.5">
+                  <p className="text-[10px] tracking-[0.14em] uppercase text-sky-200">Nom</p>
+                  <p className="mt-1 font-semibold">{cardData.lastName}</p>
+                </div>
+                <div className="rounded-lg border border-slate-500/40 bg-slate-900/45 p-2.5">
+                  <p className="text-[10px] tracking-[0.14em] uppercase text-sky-200">Date de naissance</p>
+                  <p className="mt-1 font-semibold">{cardData.birthDate}</p>
+                </div>
+                <div className="rounded-lg border border-slate-500/40 bg-slate-900/45 p-2.5">
+                  <p className="text-[10px] tracking-[0.14em] uppercase text-sky-200">Lieu d'emission</p>
+                  <p className="mt-1 font-semibold">{cardData.issuePlace}</p>
+                </div>
+                <div className="rounded-lg border border-slate-500/40 bg-slate-900/45 p-2.5">
+                  <p className="text-[10px] tracking-[0.14em] uppercase text-sky-200">Nom du pere</p>
+                  <p className="mt-1 font-semibold">{cardData.fatherName}</p>
+                </div>
+                <div className="rounded-lg border border-slate-500/40 bg-slate-900/45 p-2.5">
+                  <p className="text-[10px] tracking-[0.14em] uppercase text-sky-200">Nom de la mere</p>
+                  <p className="mt-1 font-semibold">{cardData.motherName}</p>
+                </div>
+              </div>
+
+              <div className="relative mt-4 flex items-end justify-between gap-3">
+                <div className="flex items-end gap-3">
+                  <div className="h-20 w-24 rounded-xl border border-dashed border-slate-400/60 bg-slate-900/55 p-2 text-[9px] uppercase tracking-[0.08em] text-slate-300 text-center flex flex-col items-center justify-center">
+                    <div className="h-7 w-7 rounded-full border-2 border-slate-400/80 relative mb-2">
+                      <div className="absolute left-1/2 -translate-x-1/2 -bottom-2 h-1.5 w-3.5 rounded-full border-t-2 border-slate-400/80" />
+                    </div>
+                    sans photo<br />profil neutre
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-slate-300">Statut: {cardData.status}</p>
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-slate-300 mt-1">Generee le: {cardData.generatedOn}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-md bg-white/95 p-1.5 shadow-lg border border-slate-300">
+                  {cardQrCode ? (
+                    <img src={cardQrCode} alt="QR Code carte numerique" className="h-[52px] w-[52px] object-contain" />
+                  ) : (
+                    <div className="h-[52px] w-[52px] flex items-center justify-center text-[9px] text-slate-700 border border-dashed border-slate-400">QR</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Version numerique neutre: aucune photo affichee. Utilisez le bouton Telecharger image pour exporter la carte.
+            </p>
+          </div>
+        )}
+        onClose={() => setIsCardPreviewOpen(false)}
+        actions={[
+          {
+            label: isDownloadingCardImage ? 'Generation...' : 'Telecharger image',
+            onClick: handleDownloadCardImage,
+            variant: 'primary'
+          },
+          {
+            label: 'Fermer',
+            onClick: () => setIsCardPreviewOpen(false),
+            variant: 'secondary'
+          }
+        ]}
+        className="p-4"
+      />
 
       {/* Edit Modal */}
       <Modal

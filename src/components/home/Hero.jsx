@@ -13,8 +13,8 @@ export const Hero = ({ onStart, documentType = 'CNI' }) => {
         },
         PASSPORT: {
             title1: 'Votre Passeport',
-            title2: 'Où en est-il ?',
-            desc: 'Suivez le statut de votre demande de passeport biométrique et sachez exactement quand il est prêt.',
+            title2: 'Où est-il ?',
+            desc: 'Aidez à retrouver ou signalez un acte de naissance égaré. Simplifiez vos démarches citoyennes.',
             btn: 'Trouver mon passeport'
         },
         BIRTH_CERT: {
