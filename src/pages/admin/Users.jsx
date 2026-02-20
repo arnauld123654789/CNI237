@@ -136,11 +136,34 @@ const buildDigitalCardData = (formData) => {
     birthDate: formatDateDisplay(formData.birth_date),
     issuePlace: toCardField(formData.issue_place),
     phone: toCardField(formData.phone, '--'),
+    emergencyContact1Name: toCardField(formData.emergency_contact_1_name, '--'),
+    emergencyContact1Phone: toCardField(formData.emergency_contact_1_phone, '--'),
+    emergencyContact2Name: toCardField(formData.emergency_contact_2_name, '--'),
+    emergencyContact2Phone: toCardField(formData.emergency_contact_2_phone, '--'),
+    medicalAllergies: toCardField(formData.medical_allergies, 'Aucune allergie declaree'),
     status: toCardField(formData.status, 'en cours de traitement'),
     generatedOn: new Date().toLocaleDateString('fr-FR'),
     ref
   };
 };
+
+const createEmptyRecordForm = () => ({
+  first_name: '',
+  last_name: '',
+  father_name: '',
+  mother_name: '',
+  birth_date: '',
+  issue_place: '',
+  current_location: '',
+  pickup_point_id: null,
+  phone: '',
+  emergency_contact_1_name: '',
+  emergency_contact_1_phone: '',
+  emergency_contact_2_name: '',
+  emergency_contact_2_phone: '',
+  medical_allergies: '',
+  status: 'en cours de traitement'
+});
 
 const DIGITAL_CARD_ANIMATION_CSS = `
 @keyframes cardSignalScan {
@@ -181,11 +204,11 @@ export const Users = () => {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ first_name: '', last_name: '', father_name: '', mother_name: '', birth_date: '', issue_place: '', current_location: '', pickup_point_id: null, phone: '', status: 'en cours de traitement' });
+  const [form, setForm] = useState(createEmptyRecordForm);
   // Editing via modal
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
-  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', father_name: '', mother_name: '', birth_date: '', issue_place: '', current_location: '', pickup_point_id: null, phone: '', status: 'en cours de traitement' });
+  const [editForm, setEditForm] = useState(createEmptyRecordForm);
   const [locations, setLocations] = useState([]);
   // Search and filters
   const [query, setQuery] = useState('');
@@ -216,7 +239,12 @@ export const Users = () => {
           full_name: cardData.fullName,
           birth_date: cardData.birthDate,
           issue_place: cardData.issuePlace,
-          generated_on: cardData.generatedOn
+          generated_on: cardData.generatedOn,
+          emergency_contacts: [
+            { name: cardData.emergencyContact1Name, phone: cardData.emergencyContact1Phone },
+            { name: cardData.emergencyContact2Name, phone: cardData.emergencyContact2Phone }
+          ],
+          medical_allergies: cardData.medicalAllergies
         });
         const qrDataUrl = await QRCode.toDataURL(payload, {
           width: 104,
@@ -274,7 +302,7 @@ export const Users = () => {
       const last = (form.last_name || '').trim().replace(/\s+/g, '_').toLowerCase() || 'nom';
       const anchor = document.createElement('a');
       anchor.href = dataUrl;
-      anchor.download = `carte_numerique_${first}_${last}_${cardData.ref}.png`;
+      anchor.download = `donnees_numerique_du_citoiyen_${first}_${last}_${cardData.ref}.png`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -377,7 +405,7 @@ export const Users = () => {
     setError('');
     try {
       await addCniRecord(form);
-      setForm({ first_name: '', last_name: '', father_name: '', mother_name: '', birth_date: '', issue_place: '', current_location: '', phone: '', status: '' });
+      setForm(createEmptyRecordForm());
       await refresh();
     } catch (e) {
       console.error(e);
@@ -398,6 +426,11 @@ export const Users = () => {
       current_location: r.current_location || '',
       pickup_point_id: r.pickup_point_id ?? null,
       phone: r.phone || '',
+      emergency_contact_1_name: r.emergency_contact_1_name || '',
+      emergency_contact_1_phone: r.emergency_contact_1_phone || '',
+      emergency_contact_2_name: r.emergency_contact_2_name || '',
+      emergency_contact_2_phone: r.emergency_contact_2_phone || '',
+      medical_allergies: r.medical_allergies || '',
       status: r.status || 'en cours de traitement'
     });
   };
@@ -405,7 +438,7 @@ export const Users = () => {
   const cancelEdit = () => {
     setIsEditOpen(false);
     setEditingRecord(null);
-    setEditForm({ first_name: '', last_name: '', father_name: '', mother_name: '', birth_date: '', issue_place: '', current_location: '', phone: '', status: '' });
+    setEditForm(createEmptyRecordForm());
   };
 
   const handleUpdate = async (e) => {
@@ -446,7 +479,10 @@ export const Users = () => {
   const filterGlobal = (r) => {
     const haystack = [
       r.first_name, r.last_name, r.father_name, r.mother_name,
-      r.phone, r.issue_place, r.current_location, r.status
+      r.phone, r.issue_place, r.current_location, r.status,
+      r.emergency_contact_1_name, r.emergency_contact_1_phone,
+      r.emergency_contact_2_name, r.emergency_contact_2_phone,
+      r.medical_allergies
     ];
     const locName = (() => { const m = locations.find(p => p.id === r.pickup_point_id); return m ? m.name : ''; })();
     haystack.push(locName);
@@ -609,6 +645,45 @@ export const Users = () => {
                   <option value="Disponible">Disponible</option>
                 </select>
               </div>
+              <div className="md:col-span-2 mt-2">
+                <p className="text-sm font-semibold text-slate-800">Personnes a contacter en cas d'urgence</p>
+              </div>
+              <Input
+                id="emergency_contact_1_name"
+                label="Contact 1 - Nom"
+                value={form.emergency_contact_1_name}
+                onChange={(e) => setForm({ ...form, emergency_contact_1_name: e.target.value })}
+              />
+              <Input
+                id="emergency_contact_1_phone"
+                label="Contact 1 - Telephone"
+                value={form.emergency_contact_1_phone}
+                onChange={(e) => setForm({ ...form, emergency_contact_1_phone: e.target.value })}
+              />
+              <Input
+                id="emergency_contact_2_name"
+                label="Contact 2 - Nom"
+                value={form.emergency_contact_2_name}
+                onChange={(e) => setForm({ ...form, emergency_contact_2_name: e.target.value })}
+              />
+              <Input
+                id="emergency_contact_2_phone"
+                label="Contact 2 - Telephone"
+                value={form.emergency_contact_2_phone}
+                onChange={(e) => setForm({ ...form, emergency_contact_2_phone: e.target.value })}
+              />
+              <div className="md:col-span-2">
+                <label htmlFor="medical_allergies" className="block text-xs text-slate-600 mb-1">
+                  Allergies medicales (urgence)
+                </label>
+                <textarea
+                  id="medical_allergies"
+                  className="w-full min-h-[84px] border border-slate-300 rounded px-3 py-2 text-sm"
+                  placeholder="Ex: Penicilline, arachides..."
+                  value={form.medical_allergies}
+                  onChange={(e) => setForm({ ...form, medical_allergies: e.target.value })}
+                />
+              </div>
               <div className="md:col-span-2 flex flex-col md:flex-row gap-2">
                 <Button
                   type="button"
@@ -617,7 +692,7 @@ export const Users = () => {
                   disabled={!canPreviewDigitalCard}
                   className="w-full md:w-auto"
                 >
-                  Previsualiser la carte numerique
+                  Previsualiser les donnees numerique du citoiyen
                 </Button>
                 <Button type="submit" className="bg-brand-600 hover:bg-brand-700 w-full md:w-auto">Ajouter</Button>
               </div>
@@ -723,7 +798,7 @@ export const Users = () => {
 
       <Modal
         isOpen={isCardPreviewOpen}
-        title="Previsualisation - Carte numerique"
+        title="Previsualisation - donnees numerique du citoiyen"
         description={(
           <div className="space-y-4">
             <div
@@ -742,7 +817,7 @@ export const Users = () => {
                 <div className="flex items-start gap-3">
                   <div className="h-10 w-12 rounded-md border border-amber-900/40 bg-gradient-to-br from-amber-300 via-amber-200 to-yellow-100 shadow-inner" />
                   <div>
-                    <p className="text-[10px] tracking-[0.22em] uppercase text-sky-200">Carte numerique de consultation</p>
+                    <p className="text-[10px] tracking-[0.22em] uppercase text-sky-200">Donnees numerique du citoiyen</p>
                     <h4 className="text-lg sm:text-xl font-bold tracking-wide mt-1">{cardData.fullName}</h4>
                     <p className="text-[11px] uppercase tracking-[0.12em] text-slate-300">Republique du Cameroun</p>
                   </div>
@@ -775,6 +850,21 @@ export const Users = () => {
                   <p className="text-[10px] tracking-[0.14em] uppercase text-sky-200">Nom de la mere</p>
                   <p className="mt-1 font-semibold">{cardData.motherName}</p>
                 </div>
+                <div className="sm:col-span-2 rounded-lg border border-slate-500/40 bg-slate-900/45 p-2.5">
+                  <p className="text-[10px] tracking-[0.14em] uppercase text-sky-200">Personnes a contacter en cas d'urgence</p>
+                  <div className="mt-1.5 space-y-1 text-[11px]">
+                    <p className="font-semibold">
+                      1. {cardData.emergencyContact1Name} - {cardData.emergencyContact1Phone}
+                    </p>
+                    <p className="font-semibold">
+                      2. {cardData.emergencyContact2Name} - {cardData.emergencyContact2Phone}
+                    </p>
+                  </div>
+                </div>
+                <div className="sm:col-span-2 rounded-lg border border-red-400/35 bg-red-900/25 p-2.5">
+                  <p className="text-[10px] tracking-[0.14em] uppercase text-red-200">Allergies medicales (urgence)</p>
+                  <p className="mt-1 text-[11px] font-semibold text-red-100 break-words">{cardData.medicalAllergies}</p>
+                </div>
               </div>
 
               <div className="relative mt-4 flex items-end justify-between gap-3">
@@ -793,7 +883,7 @@ export const Users = () => {
 
                 <div className="rounded-md bg-white/95 p-1.5 shadow-lg border border-slate-300">
                   {cardQrCode ? (
-                    <img src={cardQrCode} alt="QR Code carte numerique" className="h-[52px] w-[52px] object-contain" />
+                    <img src={cardQrCode} alt="QR Code donnees numerique du citoiyen" className="h-[52px] w-[52px] object-contain" />
                   ) : (
                     <div className="h-[52px] w-[52px] flex items-center justify-center text-[9px] text-slate-700 border border-dashed border-slate-400">QR</div>
                   )}
@@ -802,7 +892,7 @@ export const Users = () => {
             </div>
 
             <p className="text-xs text-slate-500">
-              Version numerique neutre: aucune photo affichee. Utilisez le bouton Telecharger image pour exporter la carte.
+              Version numerique neutre: aucune photo affichee. Ces informations peuvent aider en cas d'urgence si le citoyen ne peut pas parler.
             </p>
           </div>
         )}
@@ -853,7 +943,7 @@ export const Users = () => {
                 {locations.map((p) => (<option key={p.id} value={p.id}>{p.name} — {p.address}</option>))}
               </select>
             </div>
-            <Input id="edit_phone" label="Téléphone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+            <Input id="edit_phone" label="Telephone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
             <div>
               <label className="block text-xs text-slate-600 mb-1">Statut</label>
               <select
@@ -864,6 +954,45 @@ export const Users = () => {
                 <option value="en cours de traitement">En cours de traitement</option>
                 <option value="Disponible">Disponible</option>
               </select>
+            </div>
+            <div className="md:col-span-2 mt-2">
+              <p className="text-sm font-semibold text-slate-800">Personnes a contacter en cas d'urgence</p>
+            </div>
+            <Input
+              id="edit_emergency_contact_1_name"
+              label="Contact 1 - Nom"
+              value={editForm.emergency_contact_1_name}
+              onChange={(e) => setEditForm({ ...editForm, emergency_contact_1_name: e.target.value })}
+            />
+            <Input
+              id="edit_emergency_contact_1_phone"
+              label="Contact 1 - Telephone"
+              value={editForm.emergency_contact_1_phone}
+              onChange={(e) => setEditForm({ ...editForm, emergency_contact_1_phone: e.target.value })}
+            />
+            <Input
+              id="edit_emergency_contact_2_name"
+              label="Contact 2 - Nom"
+              value={editForm.emergency_contact_2_name}
+              onChange={(e) => setEditForm({ ...editForm, emergency_contact_2_name: e.target.value })}
+            />
+            <Input
+              id="edit_emergency_contact_2_phone"
+              label="Contact 2 - Telephone"
+              value={editForm.emergency_contact_2_phone}
+              onChange={(e) => setEditForm({ ...editForm, emergency_contact_2_phone: e.target.value })}
+            />
+            <div className="md:col-span-2">
+              <label htmlFor="edit_medical_allergies" className="block text-xs text-slate-600 mb-1">
+                Allergies medicales (urgence)
+              </label>
+              <textarea
+                id="edit_medical_allergies"
+                className="w-full min-h-[84px] border border-slate-300 rounded px-3 py-2 text-sm"
+                placeholder="Ex: Penicilline, arachides..."
+                value={editForm.medical_allergies}
+                onChange={(e) => setEditForm({ ...editForm, medical_allergies: e.target.value })}
+              />
             </div>
             <div className="md:col-span-2 flex gap-2">
               <Button type="submit" className="bg-brand-600 hover:bg-brand-700 flex-1">Enregistrer</Button>
