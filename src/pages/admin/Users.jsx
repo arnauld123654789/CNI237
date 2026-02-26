@@ -216,6 +216,33 @@ const buildDigitalCardData = (formData) => {
   };
 };
 
+const buildQrPayload = (cardData) => JSON.stringify({
+  version: 2,
+  ref: cardData.ref,
+  generated_on: cardData.generatedOn,
+  identity: {
+    full_name: cardData.fullName,
+    first_name: cardData.firstName,
+    last_name: cardData.lastName,
+    father_name: cardData.fatherName,
+    mother_name: cardData.motherName,
+    birth_date: cardData.birthDateRaw,
+    issue_place: cardData.issuePlace,
+    current_location: cardData.currentLocation,
+    phone: cardData.phone,
+    status: cardData.status
+  },
+  emergency_contacts: [
+    { name: cardData.emergencyContact1Name, phone: cardData.emergencyContact1Phone },
+    { name: cardData.emergencyContact2Name, phone: cardData.emergencyContact2Phone }
+  ],
+  medical: {
+    allergies: cardData.medicalAllergiesList,
+    preferences: cardData.medicalPreferencesList,
+    chronic_diseases: cardData.chronicDiseasesList
+  }
+});
+
 const createEmptyRecordForm = () => ({
   first_name: '',
   last_name: '',
@@ -292,12 +319,15 @@ export const Users = () => {
   const [analyzing, setAnalyzing] = useState(false);
   const [agentMessage, setAgentMessage] = useState('');
   const [isCardPreviewOpen, setIsCardPreviewOpen] = useState(false);
+  const [cardPreviewSource, setCardPreviewSource] = useState('create');
   const [cardQrCode, setCardQrCode] = useState('');
   const [isDownloadingCardImage, setIsDownloadingCardImage] = useState(false);
   const cardPreviewRef = useRef(null);
 
-  const cardData = useMemo(() => buildDigitalCardData(form), [form]);
-  const canPreviewDigitalCard = Boolean((form.first_name || '').trim() && (form.last_name || '').trim());
+  const activePreviewForm = cardPreviewSource === 'edit' ? editForm : form;
+  const cardData = useMemo(() => buildDigitalCardData(activePreviewForm), [activePreviewForm]);
+  const canPreviewCreateCard = Boolean((form.first_name || '').trim() && (form.last_name || '').trim());
+  const canPreviewEditCard = Boolean((editForm.first_name || '').trim() && (editForm.last_name || '').trim());
 
   useEffect(() => {
     let cancelled = false;
@@ -305,47 +335,30 @@ export const Users = () => {
     const buildQrCode = async () => {
       if (!isCardPreviewOpen) return;
       try {
-        const payload = JSON.stringify({
-          version: 2,
-          ref: cardData.ref,
-          generated_on: cardData.generatedOn,
-          identity: {
-            full_name: cardData.fullName,
-            first_name: cardData.firstName,
-            last_name: cardData.lastName,
-            father_name: cardData.fatherName,
-            mother_name: cardData.motherName,
-            birth_date: cardData.birthDateRaw,
-            birth_date_display: cardData.birthDate,
-            issue_place: cardData.issuePlace,
-            current_location: cardData.currentLocation,
-            phone: cardData.phone,
-            status: cardData.status
-          },
-          emergency_contacts: [
-            { name: cardData.emergencyContact1Name, phone: cardData.emergencyContact1Phone },
-            { name: cardData.emergencyContact2Name, phone: cardData.emergencyContact2Phone }
-          ],
-          medical: {
-            allergies: cardData.medicalAllergiesList,
-            preferences: cardData.medicalPreferencesList,
-            chronic_diseases: cardData.chronicDiseasesList
-          },
-          medical_display: {
-            allergies_text: cardData.medicalAllergies,
-            preferences_text: cardData.medicalPreferences,
-            chronic_diseases_text: cardData.chronicDiseases
-          }
-        });
-        const qrDataUrl = await QRCode.toDataURL(payload, {
+        const payload = buildQrPayload(cardData);
+        const baseOptions = {
           width: 104,
           margin: 1,
-          errorCorrectionLevel: 'M',
           color: {
             dark: '#0f172a',
             light: '#0000'
           }
-        });
+        };
+
+        let qrDataUrl = '';
+        try {
+          qrDataUrl = await QRCode.toDataURL(payload, {
+            ...baseOptions,
+            errorCorrectionLevel: 'M'
+          });
+        } catch (primaryError) {
+          // Fallback to lower error correction when payload is large.
+          qrDataUrl = await QRCode.toDataURL(payload, {
+            ...baseOptions,
+            errorCorrectionLevel: 'L'
+          });
+        }
+
         if (!cancelled) {
           setCardQrCode(qrDataUrl);
         }
@@ -353,6 +366,7 @@ export const Users = () => {
         console.error('QR generation error:', err);
         if (!cancelled) {
           setCardQrCode('');
+          setError("Impossible de generer le QR pour ces donnees. Reduisez le texte medical puis reessayez.");
         }
       }
     };
@@ -363,12 +377,18 @@ export const Users = () => {
     };
   }, [isCardPreviewOpen, cardData]);
 
-  const handleOpenCardPreview = () => {
-    if (!canPreviewDigitalCard) {
+  const handleOpenCardPreview = (source = 'create') => {
+    const sourceForm = source === 'edit' ? editForm : form;
+    const canPreview = Boolean((sourceForm.first_name || '').trim() && (sourceForm.last_name || '').trim());
+
+    if (!canPreview) {
       setError('Veuillez renseigner au moins le prenom et le nom avant la previsualisation.');
       return;
     }
+
     setError('');
+    setCardPreviewSource(source);
+    setCardQrCode('');
     setIsCardPreviewOpen(true);
   };
 
@@ -389,8 +409,9 @@ export const Users = () => {
         backgroundColor: '#020617'
       });
 
-      const first = (form.first_name || '').trim().replace(/\s+/g, '_').toLowerCase() || 'prenom';
-      const last = (form.last_name || '').trim().replace(/\s+/g, '_').toLowerCase() || 'nom';
+      const sourceForm = cardPreviewSource === 'edit' ? editForm : form;
+      const first = (sourceForm.first_name || '').trim().replace(/\s+/g, '_').toLowerCase() || 'prenom';
+      const last = (sourceForm.last_name || '').trim().replace(/\s+/g, '_').toLowerCase() || 'nom';
       const anchor = document.createElement('a');
       anchor.href = dataUrl;
       anchor.download = `donnees_numerique_du_citoiyen_${first}_${last}_${cardData.ref}.png`;
@@ -803,8 +824,8 @@ export const Users = () => {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={handleOpenCardPreview}
-                  disabled={!canPreviewDigitalCard}
+                  onClick={() => handleOpenCardPreview('create')}
+                  disabled={!canPreviewCreateCard}
                   className="w-full md:w-auto"
                 >
                   Previsualiser les donnees numerique du citoiyen
@@ -1181,7 +1202,16 @@ export const Users = () => {
                 onChange={(nextValue) => setEditForm({ ...editForm, chronic_diseases: nextValue })}
               />
             </div>
-            <div className="md:col-span-2 flex gap-2">
+            <div className="md:col-span-2 flex flex-col md:flex-row gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => handleOpenCardPreview('edit')}
+                disabled={!canPreviewEditCard}
+                className="w-full md:w-auto"
+              >
+                Previsualiser QR mis a jour
+              </Button>
               <Button type="submit" className="bg-brand-600 hover:bg-brand-700 flex-1">Enregistrer</Button>
               <Button type="button" className="bg-slate-200 text-slate-900 flex-1" onClick={cancelEdit}>Annuler</Button>
             </div>
