@@ -2,10 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardHeader, CardContent } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
+import { MultiValueAutocomplete } from '../../components/ui/MultiValueAutocomplete';
 import { listCniData, addCniRecord, updateCniRecord, removeCniRecord } from '../../services/cniAdminService.js';
 import { Modal } from '../../components/ui/Modal';
 import { pickupPointsService } from '../../services/pickupPointsService';
 import { aiService } from '../../services/aiService.js';
+import { formatMultiValueText, parseMultiValueText } from '../../lib/multiValueText';
 import { Sparkles, Upload, Scan, Loader2 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { toPng } from 'html-to-image';
@@ -115,10 +117,70 @@ const toCardField = (value, fallback = 'N/A') => {
   return text || fallback;
 };
 
+const MEDICAL_ALLERGY_SUGGESTIONS = [
+  'Penicilline',
+  'Arachides',
+  'Fruits a coque',
+  'Lait',
+  'Oeufs',
+  'Soja',
+  'Poisson',
+  'Crustaces',
+  'Latex',
+  "Piqures d'abeille",
+  'Sulfamides',
+  'Ibuprofene'
+];
+
+const CHRONIC_DISEASE_SUGGESTIONS = [
+  'Diabete type 1',
+  'Diabete type 2',
+  'Hypertension arterielle',
+  'Asthme',
+  'Epilepsie',
+  'Drepanocytose',
+  'Insuffisance renale chronique',
+  'Insuffisance cardiaque',
+  'VIH',
+  'Tuberculose',
+  'Maladie coronarienne',
+  'Hypothyroidie'
+];
+
+const MEDICAL_PREFERENCE_SUGGESTIONS = [
+  'Pas de transfusion sanguine',
+  "Refus de produits derives du sang",
+  'Informer la famille avant intervention',
+  'Medecin traitant a contacter en priorite',
+  'Pas de sedation sans consentement',
+  'Pas de reanimation cardiopulmonaire',
+  'Preference pour traitement oral si possible'
+];
+
+const SMART_LIST_HELPER_TEXT = 'Tapez pour voir les suggestions. Entree ou virgule pour ajouter plusieurs elements.';
+
+const EDITABLE_HEALTH_AND_EMERGENCY_FIELDS = [
+  'emergency_contact_1_name',
+  'emergency_contact_1_phone',
+  'emergency_contact_2_name',
+  'emergency_contact_2_phone',
+  'medical_allergies',
+  'medical_preferences',
+  'chronic_diseases'
+];
+
+const pickEditableHealthAndEmergencyData = (source) => EDITABLE_HEALTH_AND_EMERGENCY_FIELDS.reduce((acc, field) => {
+  acc[field] = source[field];
+  return acc;
+}, {});
+
 const buildDigitalCardData = (formData) => {
   const firstName = toCardField(formData.first_name, '');
   const lastName = toCardField(formData.last_name, '');
   const fullName = `${firstName} ${lastName}`.trim() || 'IDENTITE NON RENSEIGNEE';
+  const allergiesList = parseMultiValueText(formData.medical_allergies);
+  const medicalPreferencesList = parseMultiValueText(formData.medical_preferences);
+  const chronicDiseasesList = parseMultiValueText(formData.chronic_diseases);
 
   const seed = `${firstName}|${lastName}|${formData.birth_date || ''}|${formData.issue_place || ''}`.toUpperCase();
   let checksum = 0;
@@ -134,13 +196,20 @@ const buildDigitalCardData = (formData) => {
     fatherName: toCardField(formData.father_name),
     motherName: toCardField(formData.mother_name),
     birthDate: formatDateDisplay(formData.birth_date),
+    birthDateRaw: toCardField(formData.birth_date, '--'),
     issuePlace: toCardField(formData.issue_place),
+    currentLocation: toCardField(formData.current_location, '--'),
     phone: toCardField(formData.phone, '--'),
     emergencyContact1Name: toCardField(formData.emergency_contact_1_name, '--'),
     emergencyContact1Phone: toCardField(formData.emergency_contact_1_phone, '--'),
     emergencyContact2Name: toCardField(formData.emergency_contact_2_name, '--'),
     emergencyContact2Phone: toCardField(formData.emergency_contact_2_phone, '--'),
-    medicalAllergies: toCardField(formData.medical_allergies, 'Aucune allergie declaree'),
+    medicalAllergies: allergiesList.length > 0 ? formatMultiValueText(allergiesList) : 'Aucune allergie declaree',
+    medicalAllergiesList: allergiesList,
+    medicalPreferences: medicalPreferencesList.length > 0 ? formatMultiValueText(medicalPreferencesList) : 'Aucune preference medicale declaree',
+    medicalPreferencesList,
+    chronicDiseases: chronicDiseasesList.length > 0 ? formatMultiValueText(chronicDiseasesList) : 'Aucune maladie chronique declaree',
+    chronicDiseasesList,
     status: toCardField(formData.status, 'en cours de traitement'),
     generatedOn: new Date().toLocaleDateString('fr-FR'),
     ref
@@ -162,6 +231,8 @@ const createEmptyRecordForm = () => ({
   emergency_contact_2_name: '',
   emergency_contact_2_phone: '',
   medical_allergies: '',
+  medical_preferences: '',
+  chronic_diseases: '',
   status: 'en cours de traitement'
 });
 
@@ -235,16 +306,36 @@ export const Users = () => {
       if (!isCardPreviewOpen) return;
       try {
         const payload = JSON.stringify({
+          version: 2,
           ref: cardData.ref,
-          full_name: cardData.fullName,
-          birth_date: cardData.birthDate,
-          issue_place: cardData.issuePlace,
           generated_on: cardData.generatedOn,
+          identity: {
+            full_name: cardData.fullName,
+            first_name: cardData.firstName,
+            last_name: cardData.lastName,
+            father_name: cardData.fatherName,
+            mother_name: cardData.motherName,
+            birth_date: cardData.birthDateRaw,
+            birth_date_display: cardData.birthDate,
+            issue_place: cardData.issuePlace,
+            current_location: cardData.currentLocation,
+            phone: cardData.phone,
+            status: cardData.status
+          },
           emergency_contacts: [
             { name: cardData.emergencyContact1Name, phone: cardData.emergencyContact1Phone },
             { name: cardData.emergencyContact2Name, phone: cardData.emergencyContact2Phone }
           ],
-          medical_allergies: cardData.medicalAllergies
+          medical: {
+            allergies: cardData.medicalAllergiesList,
+            preferences: cardData.medicalPreferencesList,
+            chronic_diseases: cardData.chronicDiseasesList
+          },
+          medical_display: {
+            allergies_text: cardData.medicalAllergies,
+            preferences_text: cardData.medicalPreferences,
+            chronic_diseases_text: cardData.chronicDiseases
+          }
         });
         const qrDataUrl = await QRCode.toDataURL(payload, {
           width: 104,
@@ -431,6 +522,8 @@ export const Users = () => {
       emergency_contact_2_name: r.emergency_contact_2_name || '',
       emergency_contact_2_phone: r.emergency_contact_2_phone || '',
       medical_allergies: r.medical_allergies || '',
+      medical_preferences: r.medical_preferences || '',
+      chronic_diseases: r.chronic_diseases || '',
       status: r.status || 'en cours de traitement'
     });
   };
@@ -445,7 +538,8 @@ export const Users = () => {
     e.preventDefault();
     setError('');
     try {
-      await updateCniRecord(editingRecord.id, editForm);
+      const updates = pickEditableHealthAndEmergencyData(editForm);
+      await updateCniRecord(editingRecord.id, updates);
       cancelEdit();
       await refresh();
     } catch (e) {
@@ -482,7 +576,7 @@ export const Users = () => {
       r.phone, r.issue_place, r.current_location, r.status,
       r.emergency_contact_1_name, r.emergency_contact_1_phone,
       r.emergency_contact_2_name, r.emergency_contact_2_phone,
-      r.medical_allergies
+      r.medical_allergies, r.medical_preferences, r.chronic_diseases
     ];
     const locName = (() => { const m = locations.find(p => p.id === r.pickup_point_id); return m ? m.name : ''; })();
     haystack.push(locName);
@@ -673,15 +767,36 @@ export const Users = () => {
                 onChange={(e) => setForm({ ...form, emergency_contact_2_phone: e.target.value })}
               />
               <div className="md:col-span-2">
-                <label htmlFor="medical_allergies" className="block text-xs text-slate-600 mb-1">
-                  Allergies medicales (urgence)
-                </label>
-                <textarea
+                <MultiValueAutocomplete
                   id="medical_allergies"
-                  className="w-full min-h-[84px] border border-slate-300 rounded px-3 py-2 text-sm"
-                  placeholder="Ex: Penicilline, arachides..."
+                  label="Allergies medicales (urgence)"
                   value={form.medical_allergies}
-                  onChange={(e) => setForm({ ...form, medical_allergies: e.target.value })}
+                  suggestions={MEDICAL_ALLERGY_SUGGESTIONS}
+                  helperText={SMART_LIST_HELPER_TEXT}
+                  placeholder="Ex: Penicilline"
+                  onChange={(nextValue) => setForm({ ...form, medical_allergies: nextValue })}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <MultiValueAutocomplete
+                  id="medical_preferences"
+                  label="Preferences medicales"
+                  value={form.medical_preferences}
+                  suggestions={MEDICAL_PREFERENCE_SUGGESTIONS}
+                  helperText={SMART_LIST_HELPER_TEXT}
+                  placeholder="Ex: Pas de transfusion sanguine"
+                  onChange={(nextValue) => setForm({ ...form, medical_preferences: nextValue })}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <MultiValueAutocomplete
+                  id="chronic_diseases"
+                  label="Maladies chroniques"
+                  value={form.chronic_diseases}
+                  suggestions={CHRONIC_DISEASE_SUGGESTIONS}
+                  helperText={SMART_LIST_HELPER_TEXT}
+                  placeholder="Ex: Diabete type 2"
+                  onChange={(nextValue) => setForm({ ...form, chronic_diseases: nextValue })}
                 />
               </div>
               <div className="md:col-span-2 flex flex-col md:flex-row gap-2">
@@ -865,6 +980,14 @@ export const Users = () => {
                   <p className="text-[10px] tracking-[0.14em] uppercase text-red-200">Allergies medicales (urgence)</p>
                   <p className="mt-1 text-[11px] font-semibold text-red-100 break-words">{cardData.medicalAllergies}</p>
                 </div>
+                <div className="sm:col-span-2 rounded-lg border border-amber-400/35 bg-amber-900/20 p-2.5">
+                  <p className="text-[10px] tracking-[0.14em] uppercase text-amber-200">Preferences medicales</p>
+                  <p className="mt-1 text-[11px] font-semibold text-amber-100 break-words">{cardData.medicalPreferences}</p>
+                </div>
+                <div className="sm:col-span-2 rounded-lg border border-orange-400/35 bg-orange-900/20 p-2.5">
+                  <p className="text-[10px] tracking-[0.14em] uppercase text-orange-200">Maladies chroniques</p>
+                  <p className="mt-1 text-[11px] font-semibold text-orange-100 break-words">{cardData.chronicDiseases}</p>
+                </div>
               </div>
 
               <div className="relative mt-4 flex items-end justify-between gap-3">
@@ -892,7 +1015,7 @@ export const Users = () => {
             </div>
 
             <p className="text-xs text-slate-500">
-              Version numerique neutre: aucune photo affichee. Ces informations peuvent aider en cas d'urgence si le citoyen ne peut pas parler.
+              Version numerique neutre: aucune photo affichee. Le QR contient les informations d'identite, les contacts d'urgence et les infos medicales.
             </p>
           </div>
         )}
@@ -915,41 +1038,84 @@ export const Users = () => {
       {/* Edit Modal */}
       <Modal
         isOpen={isEditOpen}
-        title="Modifier l'enregistrement"
+        title="Modifier contacts d'urgence et infos medicales"
         description={(
           <form onSubmit={handleUpdate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input id="edit_first_name" label="Prénom" value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} required />
-            <Input id="edit_last_name" label="Nom" value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} required />
-            <Input id="edit_father_name" label="Nom du père" value={editForm.father_name} onChange={(e) => setEditForm({ ...editForm, father_name: e.target.value })} />
-            <Input id="edit_mother_name" label="Nom de la mère" value={editForm.mother_name} onChange={(e) => setEditForm({ ...editForm, mother_name: e.target.value })} />
-            <Input id="edit_birth_date" type="date" label="Date de naissance" value={editForm.birth_date} onChange={(e) => setEditForm({ ...editForm, birth_date: e.target.value })} />
-            <Input id="edit_issue_place" label="Lieu d'émission" value={editForm.issue_place} onChange={(e) => setEditForm({ ...editForm, issue_place: e.target.value })} />
+            <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-700">Informations personnelles verrouillees</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Le nom, la filiation, la date de naissance, le lieu d'emission, le point de retrait, le telephone et le statut ne sont pas modifiables ici.
+              </p>
+            </div>
+            <Input
+              id="edit_first_name"
+              label="Prenom"
+              value={editForm.first_name}
+              readOnly
+              className="bg-slate-100 text-slate-500 cursor-not-allowed"
+              required
+            />
+            <Input
+              id="edit_last_name"
+              label="Nom"
+              value={editForm.last_name}
+              readOnly
+              className="bg-slate-100 text-slate-500 cursor-not-allowed"
+              required
+            />
+            <Input
+              id="edit_father_name"
+              label="Nom du pere"
+              value={editForm.father_name}
+              readOnly
+              className="bg-slate-100 text-slate-500 cursor-not-allowed"
+            />
+            <Input
+              id="edit_mother_name"
+              label="Nom de la mere"
+              value={editForm.mother_name}
+              readOnly
+              className="bg-slate-100 text-slate-500 cursor-not-allowed"
+            />
+            <Input
+              id="edit_birth_date"
+              type="date"
+              label="Date de naissance"
+              value={editForm.birth_date}
+              readOnly
+              className="bg-slate-100 text-slate-500 cursor-not-allowed"
+            />
+            <Input
+              id="edit_issue_place"
+              label="Lieu d'emission"
+              value={editForm.issue_place}
+              readOnly
+              className="bg-slate-100 text-slate-500 cursor-not-allowed"
+            />
             <div className="md:col-span-2">
               <label className="block text-xs text-slate-600 mb-1">Point de retrait</label>
               <select
-                className="w-full border border-slate-300 rounded px-3 py-2"
+                className="w-full border border-slate-300 rounded px-3 py-2 bg-slate-100 text-slate-500 cursor-not-allowed"
                 value={editForm.pickup_point_id ?? ''}
-                onChange={(e) => {
-                  const id = e.target.value ? Number(e.target.value) : null;
-                  const selected = locations.find((p) => p.id === id) || null;
-                  setEditForm({
-                    ...editForm,
-                    pickup_point_id: id,
-                    current_location: selected ? selected.name : ''
-                  });
-                }}
+                disabled
               >
-                <option value="">Sélectionner…</option>
-                {locations.map((p) => (<option key={p.id} value={p.id}>{p.name} — {p.address}</option>))}
+                <option value="">Selectionner...</option>
+                {locations.map((p) => (<option key={p.id} value={p.id}>{p.name} - {p.address}</option>))}
               </select>
             </div>
-            <Input id="edit_phone" label="Telephone" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+            <Input
+              id="edit_phone"
+              label="Telephone"
+              value={editForm.phone}
+              readOnly
+              className="bg-slate-100 text-slate-500 cursor-not-allowed"
+            />
             <div>
               <label className="block text-xs text-slate-600 mb-1">Statut</label>
               <select
-                className="w-full border border-slate-300 rounded px-3 py-2"
+                className="w-full border border-slate-300 rounded px-3 py-2 bg-slate-100 text-slate-500 cursor-not-allowed"
                 value={editForm.status}
-                onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                disabled
               >
                 <option value="en cours de traitement">En cours de traitement</option>
                 <option value="Disponible">Disponible</option>
@@ -983,15 +1149,36 @@ export const Users = () => {
               onChange={(e) => setEditForm({ ...editForm, emergency_contact_2_phone: e.target.value })}
             />
             <div className="md:col-span-2">
-              <label htmlFor="edit_medical_allergies" className="block text-xs text-slate-600 mb-1">
-                Allergies medicales (urgence)
-              </label>
-              <textarea
+              <MultiValueAutocomplete
                 id="edit_medical_allergies"
-                className="w-full min-h-[84px] border border-slate-300 rounded px-3 py-2 text-sm"
-                placeholder="Ex: Penicilline, arachides..."
+                label="Allergies medicales (urgence)"
                 value={editForm.medical_allergies}
-                onChange={(e) => setEditForm({ ...editForm, medical_allergies: e.target.value })}
+                suggestions={MEDICAL_ALLERGY_SUGGESTIONS}
+                helperText={SMART_LIST_HELPER_TEXT}
+                placeholder="Ex: Penicilline"
+                onChange={(nextValue) => setEditForm({ ...editForm, medical_allergies: nextValue })}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <MultiValueAutocomplete
+                id="edit_medical_preferences"
+                label="Preferences medicales"
+                value={editForm.medical_preferences}
+                suggestions={MEDICAL_PREFERENCE_SUGGESTIONS}
+                helperText={SMART_LIST_HELPER_TEXT}
+                placeholder="Ex: Pas de transfusion sanguine"
+                onChange={(nextValue) => setEditForm({ ...editForm, medical_preferences: nextValue })}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <MultiValueAutocomplete
+                id="edit_chronic_diseases"
+                label="Maladies chroniques"
+                value={editForm.chronic_diseases}
+                suggestions={CHRONIC_DISEASE_SUGGESTIONS}
+                helperText={SMART_LIST_HELPER_TEXT}
+                placeholder="Ex: Diabete type 2"
+                onChange={(nextValue) => setEditForm({ ...editForm, chronic_diseases: nextValue })}
               />
             </div>
             <div className="md:col-span-2 flex gap-2">
