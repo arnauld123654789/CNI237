@@ -320,12 +320,13 @@ export const Users = () => {
   const [agentMessage, setAgentMessage] = useState('');
   const [isCardPreviewOpen, setIsCardPreviewOpen] = useState(false);
   const [cardPreviewSource, setCardPreviewSource] = useState('create');
+  const [cardPreviewData, setCardPreviewData] = useState(createEmptyRecordForm);
   const [cardQrCode, setCardQrCode] = useState('');
+  const [cardQrDisplaySize, setCardQrDisplaySize] = useState(104);
   const [isDownloadingCardImage, setIsDownloadingCardImage] = useState(false);
   const cardPreviewRef = useRef(null);
 
-  const activePreviewForm = cardPreviewSource === 'edit' ? editForm : form;
-  const cardData = useMemo(() => buildDigitalCardData(activePreviewForm), [activePreviewForm]);
+  const cardData = useMemo(() => buildDigitalCardData(cardPreviewData), [cardPreviewData]);
   const canPreviewCreateCard = Boolean((form.first_name || '').trim() && (form.last_name || '').trim());
   const canPreviewEditCard = Boolean((editForm.first_name || '').trim() && (editForm.last_name || '').trim());
 
@@ -336,35 +337,31 @@ export const Users = () => {
       if (!isCardPreviewOpen) return;
       try {
         const payload = buildQrPayload(cardData);
-        const baseOptions = {
-          width: 104,
-          margin: 1,
-          color: {
-            dark: '#0f172a',
-            light: '#0000'
-          }
-        };
+        const qrModel = QRCode.create(payload, { errorCorrectionLevel: 'L' });
+        const moduleCount = qrModel?.modules?.size || 33;
 
-        let qrDataUrl = '';
-        try {
-          qrDataUrl = await QRCode.toDataURL(payload, {
-            ...baseOptions,
-            errorCorrectionLevel: 'M'
-          });
-        } catch (primaryError) {
-          // Fallback to lower error correction when payload is large.
-          qrDataUrl = await QRCode.toDataURL(payload, {
-            ...baseOptions,
-            errorCorrectionLevel: 'L'
-          });
-        }
+        // Keep each module at a readable size to improve real-world scanning.
+        const generatedWidth = Math.max(220, Math.min(520, moduleCount * 4));
+        const displaySize = Math.max(92, Math.min(152, Math.round(moduleCount * 2.2)));
+
+        const qrDataUrl = await QRCode.toDataURL(payload, {
+          width: generatedWidth,
+          margin: 3,
+          errorCorrectionLevel: 'L',
+          color: {
+            dark: '#000000',
+            light: '#FFFFFF'
+          }
+        });
 
         if (!cancelled) {
+          setCardQrDisplaySize(displaySize);
           setCardQrCode(qrDataUrl);
         }
       } catch (err) {
         console.error('QR generation error:', err);
         if (!cancelled) {
+          setCardQrDisplaySize(104);
           setCardQrCode('');
           setError("Impossible de generer le QR pour ces donnees. Reduisez le texte medical puis reessayez.");
         }
@@ -388,6 +385,7 @@ export const Users = () => {
 
     setError('');
     setCardPreviewSource(source);
+    setCardPreviewData({ ...sourceForm });
     setCardQrCode('');
     setIsCardPreviewOpen(true);
   };
@@ -409,7 +407,7 @@ export const Users = () => {
         backgroundColor: '#020617'
       });
 
-      const sourceForm = cardPreviewSource === 'edit' ? editForm : form;
+      const sourceForm = cardPreviewData || (cardPreviewSource === 'edit' ? editForm : form);
       const first = (sourceForm.first_name || '').trim().replace(/\s+/g, '_').toLowerCase() || 'prenom';
       const last = (sourceForm.last_name || '').trim().replace(/\s+/g, '_').toLowerCase() || 'nom';
       const anchor = document.createElement('a');
@@ -1027,9 +1025,23 @@ export const Users = () => {
 
                 <div className="rounded-md bg-white/95 p-1.5 shadow-lg border border-slate-300">
                   {cardQrCode ? (
-                    <img src={cardQrCode} alt="QR Code donnees numerique du citoiyen" className="h-[52px] w-[52px] object-contain" />
+                    <img
+                      src={cardQrCode}
+                      alt="QR Code donnees numerique du citoiyen"
+                      className="object-contain"
+                      style={{
+                        width: `${cardQrDisplaySize}px`,
+                        height: `${cardQrDisplaySize}px`,
+                        imageRendering: 'pixelated'
+                      }}
+                    />
                   ) : (
-                    <div className="h-[52px] w-[52px] flex items-center justify-center text-[9px] text-slate-700 border border-dashed border-slate-400">QR</div>
+                    <div
+                      className="flex items-center justify-center text-[10px] text-slate-700 border border-dashed border-slate-400"
+                      style={{ width: `${cardQrDisplaySize}px`, height: `${cardQrDisplaySize}px` }}
+                    >
+                      QR
+                    </div>
                   )}
                 </div>
               </div>
@@ -1054,6 +1066,7 @@ export const Users = () => {
           }
         ]}
         className="p-4"
+        zIndexClass="z-[130]"
       />
 
       {/* Edit Modal */}
@@ -1220,6 +1233,7 @@ export const Users = () => {
         onClose={cancelEdit}
         actions={[]}
         className="p-4"
+        zIndexClass="z-[120]"
       />
     </div>
   );

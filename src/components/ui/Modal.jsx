@@ -10,12 +10,13 @@ export const Modal = ({
   className,
   showCloseButton = true,
   closeOnBackdrop = true,
-  closeLabel = 'Close'
+  closeLabel = 'Close',
+  zIndexClass = 'z-[100]'
 }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100]">
+    <div className={cn('fixed inset-0', zIndexClass)}>
       <div
         className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
         onClick={closeOnBackdrop ? onClose : undefined}
